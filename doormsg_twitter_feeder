@@ -1,0 +1,79 @@
+#!/usr/bin/env ruby
+
+# Door Message Twitter Feeder
+#  Feeds door entry events to the dedicated twitter feed
+# Input: Exchange 'door.entry'
+# Output: Twitter via API
+
+require 'rubygems'
+require 'twitter'
+require 'oauth'
+require 'amqp'
+require 'json'
+require 'syslog'
+require 'inifile'
+
+cfg = IniFile.load(File.expand_path("~/.labamqprc"))
+amqp_host = cfg['broker']['BrokerHost']
+amqp_user = cfg['doormsg_twitter_feeder']['BrokerUsername']
+amqp_pass = cfg['doormsg_twitter_feeder']['BrokerPassword']
+oauth_token = cfg['doormsg_twitter_feeder']['OAuthToken']
+oauth_token_secret = cfg['doormsg_twitter_feeder']['OAuthTokenSecret']
+consumer_key = cfg['doormsg_twitter_feeder']['ConsumerKey']
+consumer_secret = cfg['doormsg_twitter_feeder']['ConsumerSecret']
+
+Syslog.open('hacklab_door_tweeter')
+
+# TODO: It would be nice if these Signals actually syslogged.
+Signal.trap('INT')  do
+  Syslog.warn "Caught SIGINT, Exiting..."
+  AMQP.stop { EM.stop }
+end
+Signal.trap('TERM') do 
+  Syslog.warn "Caught SIGTERM, Exiting...."
+  AMQP.stop { EM.stop }
+end
+
+@@client = Twitter::REST::Client.new do |config|
+  config.oauth_token        = oauth_token
+  config.oauth_token_secret = oauth_token_secret
+  config.consumer_key       = consumer_key
+  config.consumer_secret    = consumer_secret
+end
+
+Syslog.info "Entering main loop..."
+AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
+
+  def tweet(name)
+    begin
+      @@client.update "#{name} has entered."
+      Syslog.info "tweeted about #{name} entering"
+    rescue Exception => e
+      Syslog.err "tweet(#{name}) caught exception => #{e}"
+    end
+  end
+  
+  def get_entered_name(doc)
+    doc["nickname"] || nil
+  end
+  
+  def allowed_to_enter?(doc)
+    doc["allowed"] || false
+  end
+
+  amq = AMQP::Channel.new
+  exchange = amq.fanout('door.entry', :durable => false, :auto_delete => false)
+  queue = amq.queue('door.entry.twitter', :durable => false, :auto_delete => true)
+  queue.bind exchange
+  queue.subscribe do |entry|
+    Syslog.info "Door Entry"
+    Syslog.debug "JSON = #{entry}"
+    doc = JSON.load(entry)
+    name = get_entered_name(doc) rescue false
+    Syslog.warn "Couldn't find a name!" unless name
+    tweet name if name && allowed_to_enter?(doc)
+  end
+
+end
+
+
