@@ -1,0 +1,131 @@
+#!/usr/bin/perl
+
+# Bandwidth Feeder
+# Input: SNMP from firewall for bandwidth statistics
+# Output: Exchange 'statistics.bandwidth'
+
+use strict;
+use warnings;
+
+use IO::File;
+use Config::IniFiles;
+use Net::RabbitMQ;
+use Net::SNMP qw(:snmp);
+use IO::Socket;
+
+my $update_every = 15000;
+
+my $cable_ifdescr;
+my $dsl_ifdescr;
+my $if_descr_oid = "1.3.6.1.2.1.2.2.1.2";
+my $if_in_octets_oid = "1.3.6.1.2.1.2.2.1.10";
+my $if_out_octets_oid = "1.3.6.1.2.1.2.2.1.16";
+
+my ($dsl_in_last, $dsl_out_last, $cable_in_last, $cable_out_last);
+my ($dsl_in_bw, $dsl_out_bw, $cable_in_bw, $cable_out_bw);
+$dsl_in_last = $dsl_out_last = $cable_in_last = $cable_out_last = -1;
+
+sub snmp_get {
+  my $session = shift;
+  my $oid = shift;
+  
+  my $result = $session->get_request(-varbindlist => [$oid]);
+  return $result->{$oid};
+}
+
+sub get_ifindex {
+  my $session = shift;
+  my $ifdescr = shift;
+
+  my $result = $session->get_entries(-columns => [$if_descr_oid]);
+  foreach my $oid (keys %{$result}) {
+    if($result->{$oid} eq $ifdescr) {
+      my @ifindexes = split(/\./, $oid);
+      my $ifindex = $ifindexes[$#ifindexes];
+      return $ifindex;
+    }
+  }
+}
+
+sub update_bandwidth {
+  my $session = shift;
+  
+  print "Updating ifIndexes...\n";
+  my $cable_int_index = get_ifindex($session, $cable_ifdescr);
+  my $dsl_int_index = get_ifindex($session, $dsl_ifdescr);
+  
+  print "Updating bandwidth data...\n";
+  # get DSL interface bandwidth
+  my $dsl_in = snmp_get($session, "$if_in_octets_oid.$dsl_int_index");
+  my $dsl_out = snmp_get($session, "$if_out_octets_oid.$dsl_int_index");
+  # get cable interface bandwidth
+  my $cable_in = snmp_get($session, "$if_in_octets_oid.$cable_int_index");
+  my $cable_out = snmp_get($session, "$if_out_octets_oid.$cable_int_index");
+  
+  if($dsl_in_last == -1) {
+    # we're still fetching the first sample, display dashes for now
+    $dsl_in_bw = $dsl_out_bw = "-1";
+    $cable_in_bw = $cable_out_bw = "-1";
+  } else {
+    # figure out how much has been used
+    $dsl_in_bw  = sprintf("%1.3f", ($dsl_in  - $dsl_in_last)  / ($update_every / 1000) / (1024*1024) * 8);
+    $dsl_out_bw = sprintf("%1.3f", ($dsl_out - $dsl_out_last) / ($update_every / 1000) / (1024*1024) * 8);
+
+    # figure out how much has been used
+    $cable_in_bw  = sprintf("%1.3f", ($cable_in  - $cable_in_last)  / ($update_every / 1000) / (1024*1024) * 8);
+    $cable_out_bw = sprintf("%1.3f", ($cable_out - $cable_out_last) / ($update_every / 1000) / (1024*1024) * 8);
+  }
+
+  # store these values for next time
+  print "Last DSL: $dsl_in_last\n";
+  print "Now  DSL: $dsl_in\n";
+  print "Last Cable: $cable_in_last\n";
+  print "Now  Cable: $cable_in\n";
+  $dsl_in_last = $dsl_in;
+  $dsl_out_last = $dsl_out;
+  $cable_in_last = $cable_in;
+  $cable_out_last = $cable_out;
+}
+
+sub publish_bandwidth {
+  my $mq = shift;
+
+  my $bw_msg = "{\"cable\":{\"up\":$cable_out_bw,\"down\":$cable_in_bw},\"dsl\":{\"up\":$dsl_out_bw,\"down\":$dsl_in_bw}}";
+  print $bw_msg . "\n";
+  $mq->publish(1, "statistics.bandwidth", "$bw_msg", { exchange => "statistics.bandwidth" });
+}
+
+sub sleep_ms {
+  my $sleep_time = shift;
+  
+  select(undef, undef, undef, $sleep_time/1000);
+}
+
+my $cfg = Config::IniFiles->new(-file => $ENV{"HOME"} . "/.labamqprc");
+my $broker_host = $cfg->val('broker', 'BrokerHost');
+my $broker_user = $cfg->val('bandwidth_feeder', 'BrokerUsername');
+my $broker_pass = $cfg->val('bandwidth_feeder', 'BrokerPassword');
+my $firewall_host = $cfg->val('bandwidth_feeder', 'FirewallHost');
+my $firewall_commstr = $cfg->val('bandwidth_feeder', 'FirewallCommunity');
+$cable_ifdescr = $cfg->val('bandwidth_feeder', 'CableInterface');
+$dsl_ifdescr = $cfg->val('bandwidth_feeder', 'DSLInterface');
+
+my ($session, $error) = Net::SNMP->session(
+  -hostname    => "$firewall_host",
+  -community   => "$firewall_commstr",
+  -translate   => [-octetstring => 0],
+  -version     => 'snmpv2c',
+);
+
+my $mq = Net::RabbitMQ->new();
+$mq->connect($broker_host, { user => $broker_user, password => $broker_pass });
+$mq->channel_open(1);
+
+while(1) {
+  update_bandwidth($session);
+  publish_bandwidth($mq); 
+  sleep_ms($update_every);
+}
+
+$mq->disconnect();
+
