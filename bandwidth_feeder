@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
-# Bandwidth Feeder
+# Bandwidth Feeder - Grab bandwidth stats from the firewall and feed them into
+#                    the AMQP system so other things can use them.
 # Input: SNMP from firewall for bandwidth statistics
 # Output: Exchange 'statistics.bandwidth'
 
