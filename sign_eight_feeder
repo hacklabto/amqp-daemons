@@ -1,0 +1,88 @@
+#!/usr/bin/ruby
+
+# Sign Eight Feeder
+#  Makes 8s appear all over the lab when a properly formatted 'eight' message
+#  is received. See http://www.youtube.com/watch?v=ia3S1TkRavU for reference.
+# Input: Exchange 'eight'
+# Output: Statistics sign via UDP, LED Sign Text Renderer service via HTTP API
+
+require 'rubygems'
+require 'amqp'
+require 'json'
+require 'socket'
+require 'inifile'
+require 'net/http'
+require 'cgi'
+
+def send_sign_text(str)
+    get_data = {
+      :Action => 'ShowMessage',
+      :Version => '2009-02-03',
+      :Message => str
+    }
+    get_data.stringify_keys!
+    query_string = format_url_request(get_data)
+    request = Net::HTTP::Get.new("/signservice/SignService" + query_string)
+    http = Net::HTTP.new("localhost", 8080)
+    http.start { |http| http.request(request) }
+end
+
+
+class Hash
+  def stringify_keys
+    inject({}) do |h, (key,value)|
+      h[key.to_s] = value
+      h
+    end
+  end
+  def stringify_keys!
+    keys.each do |key|
+      unless key.class.to_s == "String" # See ActiveSupport for why this is needed!
+        self[key.to_s] = self[key]
+        delete(key)
+      end
+    end
+    self
+  end
+end
+
+
+# Turns a hash into ?var=baz&bam=boo
+# From https://github.com/lisa/reve/blob/master/lib/reve.rb
+def format_url_request(opts)
+  req = "?"
+  opts.stringify_keys!
+  opts.keys.sort.each do |key|
+    req += "#{CGI.escape(key.to_s)}=#{CGI.escape(opts[key].to_s)}&" if opts[key]
+  end
+  req.chop # We are lazy and append a & to each pair even if it's the last one. FIXME: Don't do this.
+end
+
+@udp = UDPSocket.new
+@udp.connect "sign1", 1000
+
+cfg = IniFile.load(File.expand_path("~/.labamqprc"))
+amqp_host = cfg["broker"]["BrokerHost"]
+amqp_user = cfg["eight_feeder"]["BrokerUsername"]
+amqp_pass = cfg["eight_feeder"]["BrokerPassword"]
+
+AMQP.logging = true
+AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
+  amq = AMQP::Channel.new
+  exchange = amq.fanout('eight', :durable => false, :auto_delete => true);
+  queue = amq.queue('eight.signs', :durable => false, :auto_delete => true);
+  queue.bind(exchange);
+  queue.subscribe do |header, raw_msg|
+    msg = JSON.parse(raw_msg)
+    if(msg["eight"] == 8) then
+      # STATS SIGN
+      @udp.send "8 8 \n 8 8\n", 0
+      sleep 0.5
+      @udp.send " 8 8\n8 8 \n", 0
+      
+      # LED SIGN
+      send_sign_text "8"
+    end
+  end
+end
+
