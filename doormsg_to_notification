@@ -1,0 +1,90 @@
+#!/usr/bin/ruby
+
+# Door Message to Notification
+#  Takes door entry messages and turns them into text notifications.
+# Input: Exchange 'door.entry'
+# Output: Exchange 'notification.general'
+
+require 'rubygems'
+require 'amqp'
+require 'net/http'
+require 'cgi'
+require 'json'
+require 'inifile'
+
+cfg = IniFile.load(File.expand_path("~/.labamqprc"))
+amqp_host = cfg['broker']['BrokerHost']
+amqp_user = cfg['ledsign']['BrokerUsername']
+amqp_pass = cfg['ledsign']['BrokerPassword']
+
+AMQP.logging = true
+AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
+  amq = AMQP::Channel.new
+  door_exchange = amq.fanout('door.entry', :durable => false, :auto_delete => false);
+  door_queue = amq.queue('door.entry.notification', :durable => false, :auto_delete => true);
+  door_queue.bind(door_exchange);
+  sign_exchange = amq.fanout('notification.general', :durable => false, :auto_delete => false);
+  door_queue.subscribe do |header, msg|
+    json = JSON.load(msg)
+    p json
+    door = json['door']
+    case door
+      when "front"
+        door = "HackLab 1.0"
+      when "Front Door"
+        door = "1266 Queen"
+      when "Unit 6"
+        door = "HackLab 2.0"
+      when "Unit 12"
+        door = "HackLab 2.0 Classroom"
+    end
+    if(json['allowed']) then
+      nickname = json['nickname']
+      realname = json['realname']
+      image = nil
+      if(/^[a-zA-Z0-9\ ]+$/.match(nickname) != nil) then
+        homedir = `getent passwd '#{nickname}' | cut -d: -f6`
+        homedir.rstrip!
+        if(homedir == "") then
+          homedir = `getent passwd | cut -d: -f5,6 | grep '#{realname}:' | cut -d: -f2`
+          homedir.rstrip!
+          if homedir then
+            puts "found home directory using real name '#{realname}': #{homedir}"
+          else
+            puts "couldn't find home directory for '#{nickname}'"
+          end
+        else
+          puts "found home directory using nickname '#{nickname}': #{homedir}"
+        end
+        signname = image = nil
+        if File.exist?("#{homedir}/.ledsign") then
+          signname = File.read("#{homedir}/.ledsign")
+          puts "found sign name '#{signname.rstrip}'"
+        end
+        if File.exist?("#{homedir}/.ledsign.png") then
+          image = "#{homedir}/.ledsign.png"
+          puts "found sign image '#{image}'"
+        end
+      end
+      signname = nickname if !signname
+      signname.rstrip!
+      notify_msg = Hash.new
+      notify_msg['text'] = "#{signname} has entered #{door}."
+      msg_type = "Get Ready For"
+      msg_type = "Now Entering" if door == "HackLab 2.0" || door == "HackLab 2.0 Classroom"
+      notify_msg['long_text'] = "#{msg_type}\n#{signname}"
+      notify_msg['image'] = image if image
+      puts notify_msg.to_json
+      sign_exchange.publish(notify_msg.to_json)
+    else
+      nickname = json['nickname']
+      if(nickname == "") then
+        notify_msg = {:text => "I denied someone access to #{door} because I don't recognise their card.", :long_text => "ACCESS DENIED"}.to_json
+      else
+        notify_msg = {:text => "I denied #{nickname} access to #{door} because nobody has introduced them to me yet or someone told me they shouldn't be in there.", :long_text => "ACCESS DENIED"}.to_json
+      end
+      sign_exchange.publish(notify_msg)
+    end
+    
+  end
+end
