@@ -1,0 +1,91 @@
+#!/usr/bin/ruby
+
+# Sign Notification Feeder
+#  Feeds notifications (text or images) the big LED sign.
+# Input: notification.general
+# Output: LED sign via LED Sign Text Renderer HTTP API for text or via
+#         sign image command line tool for images.
+
+require 'rubygems'
+require 'amqp'
+require 'net/http'
+require 'cgi'
+require 'json'
+require 'inifile'
+
+class Hash
+  def stringify_keys
+    inject({}) do |h, (key,value)|
+      h[key.to_s] = value
+      h
+    end
+  end
+  def stringify_keys!
+    keys.each do |key|
+      unless key.class.to_s == "String" # See ActiveSupport for why this is needed!
+        self[key.to_s] = self[key]
+        delete(key)
+      end
+    end
+    self
+  end
+end
+
+# Turns a hash into ?var=baz&bam=boo
+# From https://github.com/lisa/reve/blob/master/lib/reve.rb
+def format_url_request(opts)
+  req = "?"
+  opts.stringify_keys!
+  opts.keys.sort.each do |key|
+    req += "#{CGI.escape(key.to_s)}=#{CGI.escape(opts[key].to_s)}&" if opts[key]
+  end
+  req.chop # We are lazy and append a & to each pair even if it's the last one. FIXME: Don't do this.
+end
+
+def send_sign_text(str)
+  puts "Sending text: #{str} to sign."
+  get_data = {
+    :Action => 'ShowMessage',
+    :Version => '2009-02-03',
+    :Message => str
+  }
+  get_data.stringify_keys!
+  query_string = format_url_request(get_data)
+  request = Net::HTTP::Get.new("/signservice/SignService" + query_string)
+  http = Net::HTTP.new("localhost", 8080)
+  http.start { |http| http.request(request) }
+end
+
+def send_sign_image(image)
+  # FIXME: this should not use the command line tool, and definitely not like this.
+  puts "Sending image '#{image}' to sign."
+  system("/home/sarahemm/signstuff/sign_image-moa.py #{image}");
+end
+
+require 'inifile'
+cfg = IniFile.load(File.expand_path("~/.labamqprc"))
+amqp_host = cfg['broker']['BrokerHost']
+amqp_user = cfg['ledsign']['BrokerUsername']
+amqp_pass = cfg['ledsign']['BrokerPassword']
+
+AMQP.logging = true
+AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
+  amq = AMQP::Channel.new
+  exchange = amq.fanout('notification.general', :durable => false, :auto_delete => false);
+  queue = amq.queue('notification.general.ledsign', :durable => false, :auto_delete => true);
+  queue.bind(exchange);
+  queue.subscribe do |header, raw_msg|
+    if(raw_msg == "") then
+      puts "Null message received!"
+      next
+    end
+    msg = JSON.parse(raw_msg)
+    if(msg['image']) then
+      send_sign_image msg['image']
+    elsif(msg['long_text']) then
+      send_sign_text msg['long_text']
+    elsif(msg['text']) then
+      send_sign_text msg['text']
+    end
+  end
+end
