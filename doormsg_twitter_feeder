@@ -17,8 +17,8 @@ cfg = IniFile.load(File.expand_path("~/.labamqprc"))
 amqp_host = cfg['broker']['BrokerHost']
 amqp_user = cfg['doormsg_twitter_feeder']['BrokerUsername']
 amqp_pass = cfg['doormsg_twitter_feeder']['BrokerPassword']
-oauth_token = cfg['doormsg_twitter_feeder']['OAuthToken']
-oauth_token_secret = cfg['doormsg_twitter_feeder']['OAuthTokenSecret']
+access_token = cfg['doormsg_twitter_feeder']['AccessToken']
+access_token_secret = cfg['doormsg_twitter_feeder']['AccessTokenSecret']
 consumer_key = cfg['doormsg_twitter_feeder']['ConsumerKey']
 consumer_secret = cfg['doormsg_twitter_feeder']['ConsumerSecret']
 
@@ -35,8 +35,8 @@ Signal.trap('TERM') do
 end
 
 @@client = Twitter::REST::Client.new do |config|
-  config.oauth_token        = oauth_token
-  config.oauth_token_secret = oauth_token_secret
+  config.access_token        = access_token
+  config.access_token_secret = access_token_secret
   config.consumer_key       = consumer_key
   config.consumer_secret    = consumer_secret
 end
