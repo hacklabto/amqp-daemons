@@ -1,0 +1,29 @@
+#!/usr/bin/ruby
+
+# LED Sign Ostrich Feeder
+#  Make an animation of an ostrich walk across the sign when notified to do so.
+# Input: notification.graphic
+# Output: LED sign via ostrich animation script
+
+require 'rubygems'
+require 'amqp'
+require 'inifile'
+
+cfg = IniFile.load(File.expand_path("~/.labamqprc"))
+amqp_host = cfg['broker']['BrokerHost']
+amqp_user = cfg['ledsign']['BrokerUsername']
+amqp_pass = cfg['ledsign']['BrokerPassword']
+
+AMQP.logging = true
+AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
+  amq = AMQP::Channel.new
+  exchange = amq.fanout('notification.graphic', :durable => false, :auto_delete => true);
+  queue = amq.queue('notification.graphic.ledsign', :durable => false, :auto_delete => true);
+  queue.bind(exchange);
+  queue.subscribe do |header, msg|
+    # TODO: all queues are supposed to be JSON! this is raw text.
+    puts msg
+    # TODO: this should be something more robust <_<
+    system "/home/sarahemm/signstuff/sign_ostrich-moa.py" if msg == "ostrich"
+  end
+end
