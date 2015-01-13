@@ -91,10 +91,23 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
   pwr_exchange = amq.fanout('statistics.power', :durable => false, :auto_delete => false);
   pwr_queue = amq.queue('statistics.power.statssign', :durable => false, :auto_delete => true);
   pwr_queue.bind(pwr_exchange);
+   s6_watts = 0
+  s6_cost = 0
+  s12_watts = 0
+  s12_cost = 0
   pwr_queue.subscribe do |header, raw_msg|
     msg = JSON.parse(raw_msg)
-    power_watts = msg["6"]["watts"]
-    power_cost = msg["6"]["cost"]
+    if(msg["6"]) then
+      s6_watts = msg["6"]["watts"]
+      s6_cost = msg["6"]["cost"]
+      puts "P6W: #{s6_watts} P6C: #{s6_cost}"
+    else
+      s12_watts = msg["12"]["watts"]
+      s12_cost = msg["12"]["cost"]
+      puts "P12W: #{s12_watts} P12C: #{s12_cost}"
+    end
+    power_watts = s6_watts + s12_watts
+    power_cost = s6_cost + s12_cost
     @power_watts_nice = power_watts
     @power_cost_nice = '%1.3f' % power_cost
     puts "PW: #{@power_watts_nice} PC: #{@power_cost_nice}"
