@@ -91,7 +91,7 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
   pwr_exchange = amq.fanout('statistics.power', :durable => false, :auto_delete => false);
   pwr_queue = amq.queue('statistics.power.statssign', :durable => false, :auto_delete => true);
   pwr_queue.bind(pwr_exchange);
-   s6_watts = 0
+  s6_watts = 0
   s6_cost = 0
   s12_watts = 0
   s12_cost = 0
