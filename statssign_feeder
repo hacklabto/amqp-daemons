@@ -97,13 +97,13 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
   s12_cost = 0
   pwr_queue.subscribe do |header, raw_msg|
     msg = JSON.parse(raw_msg)
-    if(msg["6"]) then
-      s6_watts = msg["6"]["watts"]
-      s6_cost = msg["6"]["cost"]
+    if(msg["meter_id"] == "6-LC-01") then
+      s6_watts = msg["watts"]
+      s6_cost = msg["cost"]
       puts "P6W: #{s6_watts} P6C: #{s6_cost}"
-    else
-      s12_watts = msg["12"]["watts"]
-      s12_cost = msg["12"]["cost"]
+    elsif(msg["meter_id"] == "12-LC-01") then
+      s12_watts = msg["watts"]
+      s12_cost = msg["cost"]
       puts "P12W: #{s12_watts} P12C: #{s12_cost}"
     end
     power_watts = s6_watts + s12_watts
