@@ -28,15 +28,19 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
     json = JSON.load(msg)
     p json
     door = json['door']
+    direction = "entered"
     case door
-      when "front"
-        door = "HackLab 1.0"
       when "Front Door"
         door = "1266 Queen"
       when "Unit 6"
-        door = "HackLab 2.0"
+        door = "HackLab"
       when "Unit 12"
-        door = "HackLab 2.0 Classroom"
+        door = "HackLab Classroom"
+      when "Unit 6 Exit"
+        door = "HackLab"
+        direction = "left"
+      when "Member Closet" || "Hacklab Darkroom"
+        next	# no notifications for internal doors
     end
     if(json['allowed']) then
       nickname = json['nickname']
@@ -69,7 +73,7 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
       signname = nickname if !signname
       signname.rstrip!
       notify_msg = Hash.new
-      notify_msg['text'] = "#{signname} has entered #{door}."
+      notify_msg['text'] = "#{signname} has #{direction} #{door}."
       msg_type = "Get Ready For"
       msg_type = "Now Entering" if door == "HackLab 2.0" || door == "HackLab 2.0 Classroom"
       notify_msg['long_text'] = "#{msg_type}\n#{signname}"
