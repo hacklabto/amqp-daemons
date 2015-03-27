@@ -39,7 +39,7 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
       when "Unit 6 Exit"
         door = "HackLab"
         direction = "left"
-      when "Member Closet" || "Hacklab Darkroom"
+      when "Hacklab Member Closet" || "Hacklab Darkroom"
         next	# no notifications for internal doors
     end
     if(json['allowed']) then
@@ -76,6 +76,7 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
       notify_msg['text'] = "#{signname} has #{direction} #{door}."
       msg_type = "Get Ready For"
       msg_type = "Now Entering" if door == "HackLab 2.0" || door == "HackLab 2.0 Classroom"
+      msg_type = "Goodbye" if direction == "left"
       notify_msg['long_text'] = "#{msg_type}\n#{signname}"
       notify_msg['image'] = image if image
       puts notify_msg.to_json
