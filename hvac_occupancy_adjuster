@@ -1,0 +1,43 @@
+#!/usr/bin/ruby
+
+# HVAC Occupancy Temperature Adjuster
+#  Notifies the thermostat system that the lab is occupied when
+#  occupancy is detected.
+# Input: Exchange 'statistics.occupancy'
+# Output: Thermostat adjustment via BAYweb API
+
+require 'rubygems'
+require 'amqp'
+require 'net/http'
+require 'json'
+require 'inifile'
+
+cfg = IniFile.load(File.expand_path("~/.labamqprc"))
+amqp_host = cfg['broker']['BrokerHost']
+hoa_cfg = cfg['hvac_occupancy_adjuster']
+amqp_user = hoa_cfg['BrokerUsername']
+amqp_pass = hoa_cfg['BrokerPassword']
+
+AMQP.logging = true
+AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
+  amq = AMQP::Channel.new
+  door_exchange = amq.fanout('statistics.occupancy', :durable => false, :auto_delete => false);
+  door_queue = amq.queue('statistics.occupancy.hvac', :durable => false, :auto_delete => true);
+  door_queue.bind(door_exchange);
+  door_queue.subscribe do |header, msg|
+    json = JSON.load(msg)
+    next if !json['change']
+    next if !hoa_cfg["APIID_#{json['area']}"]
+    api_id = hoa_cfg["APIID_#{json['area']}"]
+    api_key = hoa_cfg["APIKey_#{json['area']}"]
+    if(json['occupied']) then
+      puts "#{json['area']} is now occupied, alerting HVAC system."
+      request = Net::HTTP::Get.new("/v2/?key=#{api_key}&id=#{api_id}&action=set&act=0")
+    else
+      puts "#{json['area']} is now unoccupied, alerting HVAC system."
+      request = Net::HTTP::Get.new("/v2/?key=#{api_key}&id=#{api_id}&action=set&act=1")
+    end 
+    http = Net::HTTP.new("api.bayweb.com", 80)
+    http.start { |http| http.request(request) }
+  end
+end
