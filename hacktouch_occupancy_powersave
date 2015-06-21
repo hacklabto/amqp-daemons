@@ -1,0 +1,43 @@
+#!/usr/bin/ruby
+
+# HackTouch Occupancy Power Saver
+#  Turns off the HackTouch monitors when nobody is around.
+# Input: statistics.occupancy
+# Output: SSH 'tvcontrol' commands to HackTouches
+
+require 'rubygems'
+require 'amqp'
+require 'inifile'
+require 'json'
+
+cfg = IniFile.load(File.expand_path("~/.labamqprc"))
+amqp_host = cfg['broker']['BrokerHost']
+amqp_user = cfg['hacktouch_occupancy_powersave']['BrokerUsername']
+amqp_pass = cfg['hacktouch_occupancy_powersave']['BrokerPassword']
+
+AMQP.logging = true
+AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
+  amq = AMQP::Channel.new
+  exchange = amq.fanout('statistics.occupancy', :durable => false, :auto_delete => false);
+  queue = amq.queue('statistics.occupancy.hacktouch', :durable => false, :auto_delete => true);
+  queue.bind(exchange);
+  queue.subscribe do |header, raw_msg|
+    msg = JSON.parse(raw_msg)
+    next if !msg['change']
+    hacktouch = cfg['hacktouch_occupancy_powersave'][msg['area']]
+    next if !hacktouch  # no hacktouches in this area
+    if(msg['occupied']) then
+      # turn on the HackTouch monitor
+      puts "Area is now occupied, turning on #{hacktouch}."
+      system("ssh pi@hacktouch12 tvservice -p");
+      # i have no idea why, but this sequence is required to make it work again
+      system("ssh pi@hacktouch12 fbset -xres 1920 -yres 1080 -depth 24");
+      system("ssh pi@hacktouch12 fbset -xres 1920 -yres 1080 -depth 16");
+      system("ssh pi@hacktouch12 xrefresh -d :0.0");
+    else
+      # turn off the HackTouch monitor
+      puts "Area is now vacant, turning off #{hacktouch}."
+      system("ssh pi@hacktouch12 tvservice -o");
+    end
+  end
+end
