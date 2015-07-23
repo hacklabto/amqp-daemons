@@ -29,16 +29,20 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
     p json
     door = json['door']
     direction = "entered"
+    public = false
     case door
       when "Front Door"
         door = "1266 Queen"
       when "Unit 6"
         door = "HackLab"
+        public = true
       when "Unit 12"
         door = "HackLab Classroom"
+        public = true
       when "Unit 6 Exit"
         door = "HackLab"
         direction = "left"
+        public = true
       when "Hacklab Member Closet" || "Hacklab Darkroom"
         next	# no notifications for internal doors
     end
@@ -78,6 +82,7 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
       msg_type = "Now Entering" if door == "HackLab 2.0" || door == "HackLab 2.0 Classroom"
       msg_type = "Goodbye" if direction == "left"
       notify_msg['long_text'] = "#{msg_type}\n#{signname}"
+      notify_msg['public'] = public
       notify_msg['image'] = image if image
       puts notify_msg.to_json
       sign_exchange.publish(notify_msg.to_json)
