@@ -71,10 +71,10 @@ end
 # run through all the aggregates we have defined and update any requiring updating
 def process_aggregates(aggregates, occupancy_status, last_detected, exchange)
   aggregates.each do |name, agg_sensors|
-    occupied = 'unoccupied'
+    occupied = false 
     sensors_included = agg_sensors.split(",")
     sensors_included.each do |sensor|
-      occupied = 'occupied' if occupancy_status[sensor]
+      occupied = true if occupancy_status[sensor] && occupancy_status[sensor] == 'occupied'
     end
     update_sensor_status name, occupied, occupancy_status, last_detected, exchange
   end 
