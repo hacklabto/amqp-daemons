@@ -37,8 +37,9 @@ get '/occupancysense' do
   end
 
   sensor_name = sensors[sensor_id]
-  update_sensor_status sensor_name, status, occupancy_status, last_detected, exchange
+  retval = update_sensor_status sensor_name, status, occupancy_status, last_detected, exchange
   process_aggregates aggregates, occupancy_status, last_detected, exchange
+  retval
 end
 
 get '/' do
