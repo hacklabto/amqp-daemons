@@ -29,15 +29,15 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
     if(msg['occupied']) then
       # turn on the HackTouch monitor
       puts "Area is now occupied, turning on #{hacktouch}."
-      system("ssh pi@hacktouch12 tvservice -p");
+      system("ssh pi@#{hacktouch} tvservice -p");
       # i have no idea why, but this sequence is required to make it work again
-      system("ssh pi@hacktouch12 fbset -xres 1920 -yres 1080 -depth 24");
-      system("ssh pi@hacktouch12 fbset -xres 1920 -yres 1080 -depth 16");
-      system("ssh pi@hacktouch12 xrefresh -d :0.0");
+      system("ssh pi@#{hacktouch} fbset -xres 1920 -yres 1080 -depth 24");
+      system("ssh pi@#{hacktouch} fbset -xres 1920 -yres 1080 -depth 16");
+      system("ssh pi@#{hacktouch} xrefresh -d :0.0");
     else
       # turn off the HackTouch monitor
       puts "Area is now vacant, turning off #{hacktouch}."
-      system("ssh pi@hacktouch12 tvservice -o");
+      system("ssh pi@#{hacktouch} tvservice -o");
     end
   end
 end
