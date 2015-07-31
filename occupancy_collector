@@ -10,10 +10,12 @@ require 'bunny'
 set :port, 8081
 
 cfg = IniFile.load(File.expand_path("~/.labamqprc"))
-sensors = IniFile.load(File.expand_path("~/.occupancyrc"))['sensors']
+occupancy_cfg = IniFile.load(File.expand_path("~/.occupancyrc"))
 amqp_host = cfg['broker']['BrokerHost']
 amqp_user = cfg['occupancy_collector']['BrokerUsername']
 amqp_pass = cfg['occupancy_collector']['BrokerPassword']
+sensors = occupancy_cfg['sensors']
+aggregates = occupancy_cfg['aggregates']
 
 occupancy_status = Hash.new
 last_detected = Hash.new
@@ -35,6 +37,20 @@ get '/occupancysense' do
   end
 
   sensor_name = sensors[sensor_id]
+  update_sensor_status sensor_name, status, occupancy_status, last_detected, exchange
+  process_aggregates aggregates, occupancy_status, last_detected, exchange
+end
+
+get '/' do
+  response = "<h1>Lab Occupancy Status as of #{Time.now}</h1><ul>"
+  occupancy_status.each do |area, occupied|
+    response += "<li>#{area}: #{occupied}</li>"
+  end
+  response += "</ul>"
+  response
+end
+
+def update_sensor_status(sensor_name, status, occupancy_status, last_detected, exchange)
   status_word = status ? "occupied" : "unoccupied"
   change = false
   change = true if occupancy_status[sensor_name] != status_word
@@ -51,11 +67,14 @@ get '/occupancysense' do
   "Occupancy data '#{status_word}' recorded for sensor #{sensor_name}."
 end
 
-get '/' do
-  response = "<h1>Lab Occupancy Status as of #{Time.now}</h1><ul>"
-  occupancy_status.each do |area, occupied|
-    response += "<li>#{area}: #{occupied}</li>"
-  end
-  response += "</ul>"
-  response
+# run through all the aggregates we have defined and update any requiring updating
+def process_aggregates(aggregates, occupancy_status, last_detected, exchange)
+  aggregates.each do |name, agg_sensors|
+    occupied = 'unoccupied'
+    sensors_included = agg_sensors.split(",")
+    sensors_included.each do |sensor|
+      occupied = 'occupied' if occupancy_status[sensor]
+    end
+    update_sensor_status name, occupied, occupancy_status, last_detected, exchange
+  end 
 end
