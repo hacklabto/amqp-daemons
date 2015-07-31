@@ -1,0 +1,33 @@
+#!/usr/bin/ruby
+
+# AutoDoor Occupancy Disabler
+#  Notifies the AutoDoor system when the lab is unoccupied.
+# Input: Exchange 'statistics.occupancy'
+# Output: AutoDoor system via ssh
+
+require 'rubygems'
+require 'amqp'
+require 'net/http'
+require 'json'
+require 'inifile'
+
+cfg = IniFile.load(File.expand_path("~/.labamqprc"))
+amqp_host = cfg['broker']['BrokerHost']
+aod_cfg = cfg['autodoor_occupancy_disabler']
+amqp_user = aod_cfg['BrokerUsername']
+amqp_pass = aod_cfg['BrokerPassword']
+
+AMQP.logging = true
+AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
+  amq = AMQP::Channel.new
+  door_exchange = amq.fanout('statistics.occupancy', :durable => false, :auto_delete => false);
+  door_queue = amq.queue('statistics.occupancy.autodoor', :durable => false, :auto_delete => true);
+  door_queue.bind(door_exchange);
+  door_queue.subscribe do |header, msg|
+    json = JSON.load(msg)
+    next if !(json['change'] and json['area'] == 'Lab' and !json['occupied'])
+    # if we get here the entire lab is unoccupied, shut off the autodoor
+    system("ssh root@autodoor rm -f /var/run/autodoor_on");
+    puts "Lab unoccupied, disabling AutoDoor."
+  end
+end
