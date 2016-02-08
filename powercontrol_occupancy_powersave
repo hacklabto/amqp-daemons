@@ -1,0 +1,46 @@
+#!/usr/bin/ruby
+
+# PowerControl Occupancy Power Saver
+#  Turns off random things around the lab when nobody is around.
+# Input: statistics.occupancy
+# Output: HTTP calls to PowerControl board above the 3D printers.
+
+require 'rubygems'
+require 'amqp'
+require 'inifile'
+require 'socket'
+require 'json'
+
+cfg = IniFile.load(File.expand_path("~/.labamqprc"))
+amqp_host = cfg['broker']['BrokerHost']
+amqp_user = cfg['powercontrol_occupancy_powersave']['BrokerUsername']
+amqp_pass = cfg['powercontrol_occupancy_powersave']['BrokerPassword']
+powercontrol_addr = cfg['powercontrol_occupancy_powersave']['PowerControlIP']
+
+$stdout.sync = true
+
+AMQP.logging = true
+AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
+  amq = AMQP::Channel.new
+  exchange = amq.fanout('statistics.occupancy', :durable => false, :auto_delete => false);
+  queue = amq.queue('statistics.occupancy.hacktouch', :durable => false, :auto_delete => true);
+  queue.bind(exchange);
+  queue.subscribe do |header, raw_msg|
+    msg = JSON.parse(raw_msg)
+    next if !msg['change']
+    channel = cfg['powercontrol_occupancy_powersave'][msg['area']]
+    next if !channel  # no power control in this area
+    state = nil
+    if(msg['occupied']) then
+      # turn on the power channel
+      puts "#{Time.now} Area is now occupied, turning channel #{channel} on."
+      state = 'on'
+    else
+      # turn off the power channel
+      puts "#{Time.now} Area is now vacant, turning channel #{channel} off."
+      state = 'off'
+    end
+    sock = TCPSocket.open(powercontrol_addr, 80)
+    sock.puts "GET /?p=#{channel}&s=#{state} HTTP/1.0\r\n"
+  end
+end
