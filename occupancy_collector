@@ -9,6 +9,9 @@ require 'bunny'
 
 set :port, 8081
 
+# make sure log messages hit the log immediately
+$stdout.sync = true
+
 cfg = IniFile.load(File.expand_path("~/.labamqprc"))
 occupancy_cfg = IniFile.load(File.expand_path("~/.occupancyrc"))
 amqp_host = cfg['broker']['BrokerHost']
@@ -56,6 +59,7 @@ def update_sensor_status(sensor_name, status, occupancy_status, last_detected, e
   change = false
   change = true if occupancy_status[sensor_name] != status_word
   occupancy_status[sensor_name] = status_word
+  last_detected[sensor_name] = Time.at(0) if !last_detected.has_key? sensor_name
   last_detected[sensor_name] = Time.now if status
   msg = Hash.new
   msg[:area] = sensor_name
