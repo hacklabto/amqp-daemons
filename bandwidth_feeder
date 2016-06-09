@@ -58,7 +58,8 @@ sub update_bandwidth {
   my $cable_in = snmp_get($session, "$if_in_octets_oid.$cable_int_index");
   my $cable_out = snmp_get($session, "$if_out_octets_oid.$cable_int_index");
   
-  if($cable_in_last == -1) {
+  # TODO: handle counter rollovers better than just returning -1 for one interval.
+  if($cable_in_last == -1 || ($cable_in - $cable_in_last) < 0 || ($cable_out - $cable_out_last) < 0) {
     # we're still fetching the first sample, display dashes for now
     $cable_in_bw = $cable_out_bw = "-1";
   } else {
