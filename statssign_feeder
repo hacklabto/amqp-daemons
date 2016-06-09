@@ -18,42 +18,30 @@ amqp_user = cfg['statssign']['BrokerUsername']
 amqp_pass = cfg['statssign']['BrokerPassword']
 
 @screen_nbr = 0
-@dsl_up_nice = "0.000";
-@dsl_down_nice = "0.000";
 @cable_up_nice = "0.000";
 @cable_down_nice = "0.000";
 @power_watts_nice = "0.000";
 @power_cost_nice = "0.000";
 draw_next_screen = Proc.new {
-  # 0 = DSL
-  # 1 = DSL b/w
-  # 2 = CABL
-  # 3 = Cable b/w
-  # 4 = Pr
-  # 5 = Power stats
+  # 0 = CABL
+  # 1 = Cable b/w
+  # 2 = ELEC
+  # 3 = Power stats
   puts "Drawing screen #{@screen_nbr}."
   case @screen_nbr
     when 0
-      @udp.send "d5L \n    \n", 0
-      EM.add_timer(0.75, draw_next_screen)
-      p Time.now
-    when 1
-      @udp.send "#{@dsl_down_nice}\n#{@dsl_up_nice}\n", 0
-      EM.add_timer(2, draw_next_screen)
-      p Time.now
-    when 2
       @udp.send "cAbL\n    \n", 0
       EM.add_timer(0.75, draw_next_screen)
       p Time.now
-    when 3
+    when 1
       @udp.send "#{@cable_down_nice}\n#{@cable_up_nice}\n", 0
       EM.add_timer(2, draw_next_screen)
       p Time.now
-    when 4
+    when 2
       @udp.send "ELEC\n    \n", 0
       EM.add_timer(0.75, draw_next_screen)
       p Time.now
-    when 5
+    when 3
       @udp.send "#{@power_watts_nice}\n#{@power_cost_nice}\n", 0
       EM.add_timer(2, draw_next_screen)
       p Time.now
@@ -73,19 +61,14 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
   bw_queue.bind(bw_exchange);
   bw_queue.subscribe do |header, raw_msg|
     msg = JSON.parse(raw_msg)
-    dsl_up = msg["dsl"]["up"]
-    dsl_down = msg["dsl"]["down"]
     cable_up = msg["cable"]["up"]
     cable_down = msg["cable"]["down"]
-    if(dsl_up == -1) then
-      @dsl_up_nice = @dsl_down_nice = @cable_up_nice = @cable_down_nice = "----"
+    if(cable_up == -1) then
+      @cable_up_nice = @cable_down_nice = "----"
     else
-      @dsl_up_nice = '%1.3f' % dsl_up
-      @dsl_down_nice = '%1.3f' % dsl_down
       @cable_up_nice = '%1.3f' % cable_up
       @cable_down_nice = '%1.3f' % cable_down
     end
-    puts "DU: #{@dsl_up_nice} DD: #{@dsl_down_nice}";
     puts "CU: #{@cable_up_nice} CD: #{@cable_down_nice}";
   end
   pwr_exchange = amq.fanout('statistics.power', :durable => false, :auto_delete => false);
