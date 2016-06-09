@@ -50,7 +50,7 @@ draw_next_screen = Proc.new {
       EM.add_timer(2, draw_next_screen)
       p Time.now
     when 4
-      @udp.send "C057\n    \n", 0
+      @udp.send "ELEC\n    \n", 0
       EM.add_timer(0.75, draw_next_screen)
       p Time.now
     when 5
