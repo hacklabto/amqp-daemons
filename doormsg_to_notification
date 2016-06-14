@@ -79,7 +79,7 @@ AMQP.start(:host => amqp_host, :user => amqp_user, :pass => amqp_pass) do
       notify_msg = Hash.new
       notify_msg['text'] = "#{signname} has #{direction} #{door}."
       msg_type = "Get Ready For"
-      msg_type = "Now Entering" if door == "HackLab 2.0" || door == "HackLab 2.0 Classroom"
+      msg_type = "Now Entering" if door == "HackLab" || door == "HackLab Classroom"
       msg_type = "Goodbye" if direction == "left"
       notify_msg['long_text'] = "#{msg_type}\n#{signname}"
       notify_msg['public'] = public
